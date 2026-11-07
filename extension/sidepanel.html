@@ -48,6 +48,7 @@
     </section>
     <article id="doc" hidden></article>
   </main>
+  <button id="fix-selection" class="floating" hidden>Fix pronunciation</button>
 
   <footer class="bar controls">
     <label class="field">
@@ -89,6 +90,12 @@
         <button value="save">Save</button>
       </div>
 
+      <h3>Speech</h3>
+      <button id="open-pron" type="button" class="nav-row">
+        <span>Pronunciations</span>
+        <span class="muted"><span id="pron-count"></span> ›</span>
+      </button>
+
       <h3>Keyboard shortcuts</h3>
       <dl class="shortcuts">
         <dt><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd></dt><dd>Read selection (any page)</dd>
@@ -98,6 +105,82 @@
         <dt><kbd>Esc</kbd></dt><dd>Stop</dd>
       </dl>
       <p class="muted small">All except the first work while the panel is focused. Change the global shortcut at <code>chrome://extensions/shortcuts</code>.</p>
+    </form>
+  </dialog>
+
+  <dialog id="pron" class="sheet">
+    <section id="pron-list-view" class="view">
+      <div class="sheet-head">
+        <button id="pron-close" type="button" class="icon" title="Done" aria-label="Done"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <h2>Pronunciations</h2>
+        <button id="pron-add" type="button" class="icon" title="Add pronunciation" aria-label="Add pronunciation">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <input id="pron-search" type="search" placeholder="Search" aria-label="Search pronunciations">
+      <ul id="pron-list" class="list"></ul>
+      <div id="pron-empty" class="sheet-empty">
+        <p>Teach Paroli how to say names, brands and jargon it gets wrong.</p>
+        <p class="muted small">Tap <strong>+</strong>, or select a word in the reader and choose <strong>Fix pronunciation</strong>.</p>
+      </div>
+      <div class="row transfer">
+        <button id="pron-import" type="button" class="secondary">Import…</button>
+        <button id="pron-export" type="button" class="secondary">Export</button>
+      </div>
+      <input id="pron-file" type="file" accept=".json,application/json" hidden>
+      <p id="pron-transfer-result" class="muted small"></p>
+    </section>
+
+    <form id="pron-edit-view" class="view" hidden novalidate>
+      <div class="sheet-head">
+        <button id="pron-back" type="button" class="icon" title="Back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <h2 id="pron-edit-title">New Pronunciation</h2>
+        <button id="pron-save" type="submit" class="small-btn">Save</button>
+      </div>
+
+      <div class="group">
+        <label class="field">
+          <span>Phrase</span>
+          <div class="input-row">
+            <input id="pron-phrase" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Paroli" required>
+            <button id="pron-play-original" type="button" class="icon" title="Hear how it's said now" aria-label="Hear current pronunciation"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></button>
+          </div>
+        </label>
+        <p id="pron-original" class="muted small phon"></p>
+
+        <div class="segmented" role="radiogroup" aria-label="Language">
+          <label><input type="radio" name="pron-lang" value="en" checked><span>English</span></label>
+          <label><input type="radio" name="pron-lang" value="ja"><span>Japanese</span></label>
+        </div>
+
+        <label class="field">
+          <span id="pron-sounds-label">Sounds like</span>
+          <input id="pron-sounds" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. pah-ROH-lee">
+        </label>
+        <p id="pron-sounds-hint" class="muted small">Spell it the way it sounds. Separate syllables with hyphens and capitalize the stressed one.</p>
+        <label class="check"><input id="pron-ignore-case" type="checkbox" checked> Ignore case</label>
+      </div>
+
+      <div class="group">
+        <h3 class="group-title">Choose a pronunciation</h3>
+        <ul id="pron-candidates" class="list candidates" role="radiogroup" aria-label="Pronunciation options"></ul>
+        <p id="pron-candidates-status" class="muted small"></p>
+      </div>
+
+      <details id="pron-advanced" class="group">
+        <summary>Phonemes</summary>
+        <label class="field">
+          <span>Kokoro phonemes (<a href="https://github.com/hexgrad/misaki/blob/main/EN_PHONES.md" target="_blank" rel="noopener">reference</a>)</span>
+          <div class="input-row">
+            <input id="pron-phonemes" type="text" autocomplete="off" spellcheck="false" class="phon">
+            <button id="pron-play-phonemes" type="button" class="icon" title="Play" aria-label="Play phonemes"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></button>
+          </div>
+        </label>
+        <p id="pron-phonemes-warning" class="warn small" hidden></p>
+      </details>
+
+      <p id="pron-dup" class="muted small" hidden></p>
+      <button id="pron-delete" type="button" class="danger wide" hidden>Delete Pronunciation</button>
     </form>
   </dialog>
 </body>

@@ -13,6 +13,7 @@ A lightweight TTS (text-to-speech) REST server built on [Kokoro](https://github.
 | GET | `/v1/voices` | List available voices |
 | POST | `/v1/audio/speech` | Generate speech (streaming WAV) |
 | POST | `/v1/audio/speech/create` | Alias for the above |
+| POST | `/v1/pronunciations/suggest` | Turn a "sounds like" respelling into phoneme candidates |
 
 ### Voices
 
@@ -31,6 +32,12 @@ A lightweight TTS (text-to-speech) REST server built on [Kokoro](https://github.
 | `speed` | float | `1.5` | Playback speed, `0.25`–`4.0` |
 
 Unknown fields (e.g. `model`) are silently ignored, so OpenAI-compatible TTS clients can point at this server without modification.
+
+### Custom pronunciations
+
+English input accepts inline phoneme overrides in misaki's link syntax, e.g. `"I use [Paroli](/pɑɹˈOli/) daily"`. Japanese has no equivalent, so substitute the reading (`主` → `ぬし`) in the text instead.
+
+`POST /v1/pronunciations/suggest` takes `{"phrase": "Paroli", "sounds_like": "pah-ROH-lee", "lang": "en"}` and returns the phrase's current phonemes (`original`), a list of `candidates` (`{phonemes, label}`, best guess first, with the capitalized syllable stressed and the alternatives stressing each other syllable), and the model's phoneme `alphabet`. With `"lang": "ja"`, the candidate is just the reading.
 
 ### Response format
 
@@ -56,6 +63,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - Click any sentence, or drag the progress bar, to jump there
 - Transport: play/pause, stop, previous/next sentence
 - Speed changes apply instantly and keep the voice's pitch (playback is sped up in the browser; the server always synthesizes at 1.0×). Voice changes apply from the next sentence
+- **Pronunciations** (Settings → Pronunciations, modeled on Apple's Spoken Content screen): add a phrase, type how it sounds (`pah-ROH-lee`), listen to the suggested options and pick one. Or select a word in the reader and click **Fix pronunciation**. English entries become phoneme overrides, which you can also edit by hand; Japanese entries take a kana reading. They're stored in the extension and apply to every voice that speaks the entry's language
 - With the `mix` voice, a badge shows whether the current sentence is EN, JA or EN+JA
 - Panel shortcuts: <kbd>Space</kbd> play/pause, <kbd>←</kbd>/<kbd>→</kbd> sentence, <kbd>[</kbd>/<kbd>]</kbd> speed, <kbd>Esc</kbd> stop
 - Server URL is set in the panel's settings (default `http://localhost:8000/v1`); the global shortcut can be changed at `chrome://extensions/shortcuts`

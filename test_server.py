@@ -72,3 +72,32 @@ def test_tts_default_voice():
     r = client.post("/v1/audio/speech", json={"input": "Default voice test."})
     assert r.status_code == 200
     assert r.headers["content-type"] == "audio/wav"
+
+
+def test_suggest_english_respelling():
+    r = client.post("/v1/pronunciations/suggest", json={"phrase": "Paroli", "sounds_like": "pah-ROH-lee"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["original"]
+    assert data["alphabet"]
+    first = data["candidates"][0]
+    assert first["label"] == "pah-ROH-lee"
+    assert "ˈO" in first["phonemes"]  # stress lands on the capitalized syllable
+    assert len({c["phonemes"] for c in data["candidates"]}) == len(data["candidates"])
+
+
+def test_suggest_japanese_reading():
+    r = client.post("/v1/pronunciations/suggest", json={"phrase": "主", "sounds_like": "ぬし", "lang": "ja"})
+    assert r.status_code == 200
+    assert r.json()["candidates"][0]["label"] == "ぬし"
+
+
+def test_suggest_rejects_unknown_lang():
+    r = client.post("/v1/pronunciations/suggest", json={"phrase": "x", "lang": "fr"})
+    assert r.status_code == 422
+
+
+def test_tts_inline_phoneme_override():
+    r = client.post("/v1/audio/speech", json={"input": "ぬし said [Paroli](/pɑɹˈOli/).", "voice": "mix"})
+    assert r.status_code == 200
+    _check_wav(r.content)

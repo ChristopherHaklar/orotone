@@ -1,4 +1,8 @@
 import { getSelectionText } from './selection.js';
+import {
+  applyPronunciations, loadPronunciations, savePronunciations, previewInput, isUsable, PHONEME_FORBIDDEN,
+  exportPronunciations, importPronunciations,
+} from './pronunciations.js';
 
 const DEFAULTS = { server: 'http://localhost:8000/v1', voice: 'af_heart', speed: 1.5, follow: true };
 const FALLBACK_VOICES = [
@@ -24,6 +28,8 @@ const el = {
 };
 
 let settings = { ...DEFAULTS };
+let voices = FALLBACK_VOICES;
+let pronunciations = [];
 let sentences = [];       // { text, display, para, lang }
 let spans = [];
 let current = -1;
@@ -104,15 +110,27 @@ function toWavUrl(arrayBuffer) {
   return URL.createObjectURL(blob);
 }
 
-async function fetchAudio(sentence, signal) {
+async function synthesize(input, voice, signal) {
   const res = await fetch(`${settings.server}/audio/speech`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: sentence.text, voice: settings.voice, speed: 1 }),
+    body: JSON.stringify({ input, voice, speed: 1 }),
     signal,
   });
   if (!res.ok) throw new Error(`Server returned ${res.status}: ${await res.text()}`);
   return toWavUrl(await res.arrayBuffer());
+}
+
+// Languages a voice speaks, used to decide which pronunciations apply to it
+function langsFor(voiceId) {
+  if (voiceId === 'mix') return new Set(['en', 'ja']);
+  const voice = voices.find((v) => v.voice === voiceId);
+  return new Set([voice?.lang?.startsWith('ja') ? 'ja' : 'en']);
+}
+
+function fetchAudio(sentence, signal) {
+  const input = applyPronunciations(sentence.text, pronunciations, langsFor(settings.voice));
+  return synthesize(input, settings.voice, signal);
 }
 
 function dropEntry(entry) {
@@ -397,7 +415,6 @@ async function fetchVoices(server = settings.server) {
 }
 
 async function loadVoices() {
-  let voices;
   try {
     voices = await fetchVoices();
     hideError();
@@ -530,9 +547,374 @@ chrome.storage.session.onChanged.addListener((changes) => {
   if (changes[`pending:${windowId}`]?.newValue) takePending();
 });
 
+// ---------- pronunciations ----------
+
+const pron = {
+  sheet: $('pron'), listView: $('pron-list-view'), editView: $('pron-edit-view'),
+  list: $('pron-list'), empty: $('pron-empty'), search: $('pron-search'), count: $('pron-count'),
+  title: $('pron-edit-title'), phrase: $('pron-phrase'), original: $('pron-original'),
+  sounds: $('pron-sounds'), soundsLabel: $('pron-sounds-label'), soundsHint: $('pron-sounds-hint'),
+  candidates: $('pron-candidates'), candidatesStatus: $('pron-candidates-status'),
+  advanced: $('pron-advanced'), phonemes: $('pron-phonemes'), phonemesWarning: $('pron-phonemes-warning'),
+  ignoreCase: $('pron-ignore-case'), dup: $('pron-dup'), del: $('pron-delete'), save: $('pron-save'),
+  fix: $('fix-selection'),
+};
+const PLAY_ICON = '<svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>';
+let editing = null;        // id of the entry being edited, or null for a new one
+let candidates = [];
+let autoPick = true;       // follow the top suggestion until the user picks or types phonemes
+let alphabet = '';
+let suggestToken = 0;
+let suggestTimer;
+const previewPlayer = new Audio();
+previewPlayer.preservesPitch = true;
+let previewController;
+let previewButton;
+
+const editLang = () => pron.editView.elements['pron-lang'].value;
+
+function updatePronCount() {
+  pron.count.textContent = pronunciations.length || '';
+}
+
+function voiceFor(lang) {
+  if (langsFor(settings.voice).has(lang)) return settings.voice;
+  return voices.find((v) => langsFor(v.voice).has(lang) && v.voice !== 'mix')?.voice ?? (lang === 'ja' ? 'jf_alpha' : 'af_heart');
+}
+
+function endPreview() {
+  previewController?.abort();
+  previewPlayer.pause();
+  previewButton?.classList.remove('playing');
+  previewButton = null;
+}
+
+async function preview(entry, button, phonemes) {
+  const wasThis = previewButton === button;
+  endPreview();
+  if (wasThis || !entry.phrase.trim()) return;
+  if (running && !paused) togglePlay(); // don't talk over the reader
+  previewButton = button;
+  button.classList.add('playing');
+  const controller = previewController = new AbortController();
+  try {
+    const url = await synthesize(previewInput(entry, phonemes), voiceFor(entry.lang), controller.signal);
+    if (controller.signal.aborted || !url) return;
+    previewPlayer.src = url;
+    previewPlayer.playbackRate = settings.speed;
+    previewPlayer.onended = () => { URL.revokeObjectURL(url); if (previewButton === button) endPreview(); };
+    await previewPlayer.play();
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    endPreview();
+    pron.candidatesStatus.textContent = err.name === 'TypeError' ? `Can't reach the server at ${settings.server}.` : err.message;
+  }
+}
+
+function playButton(label, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'icon';
+  b.title = b.ariaLabel = label;
+  b.innerHTML = PLAY_ICON;
+  b.addEventListener('click', (e) => { e.stopPropagation(); onClick(b); });
+  return b;
+}
+
+function renderPronList() {
+  const q = pron.search.value.trim().toLowerCase();
+  const shown = pronunciations
+    .filter((e) => !q || e.phrase.toLowerCase().includes(q) || (e.soundsLike ?? '').toLowerCase().includes(q))
+    .sort((a, b) => a.phrase.localeCompare(b.phrase));
+  pron.list.replaceChildren(...shown.map((entry) => {
+    const li = document.createElement('li');
+    li.className = 'row';
+    li.tabIndex = 0;
+    const main = document.createElement('div');
+    main.className = 'row-main';
+    const name = document.createElement('strong');
+    name.textContent = entry.phrase;
+    const detail = document.createElement('span');
+    detail.className = 'muted';
+    detail.textContent = [entry.soundsLike, entry.lang === 'en' && entry.phonemes && `/${entry.phonemes}/`].filter(Boolean).join('  ·  ');
+    main.append(name, detail);
+    li.append(main);
+    if (entry.lang === 'ja') {
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = 'JA';
+      li.append(badge);
+    }
+    li.append(playButton(`Play ${entry.phrase}`, (b) => preview(entry, b)));
+    li.addEventListener('click', () => openEditor(entry));
+    li.addEventListener('keydown', (e) => { if (e.key === 'Enter') openEditor(entry); });
+    return li;
+  }));
+  pron.empty.hidden = pronunciations.length > 0;
+  $('pron-export').disabled = !pronunciations.length;
+  pron.search.hidden = pronunciations.length < 6;
+}
+
+function showView(view) {
+  endPreview();
+  pron.listView.hidden = view !== 'list';
+  pron.editView.hidden = view !== 'edit';
+  if (view === 'list') renderPronList();
+}
+
+function openPronunciations() {
+  if (el.settings.open) el.settings.close();
+  pron.search.value = '';
+  $('pron-transfer-result').textContent = '';
+  showView('list');
+  if (!pron.sheet.open) pron.sheet.showModal();
+}
+
+function openEditor(entry = {}, { fresh = !entry.id } = {}) {
+  editing = entry.id ?? null;
+  pron.title.textContent = editing ? 'Edit Pronunciation' : 'New Pronunciation';
+  pron.phrase.value = entry.phrase ?? '';
+  pron.sounds.value = entry.soundsLike ?? '';
+  pron.phonemes.value = entry.phonemes ?? '';
+  pron.ignoreCase.checked = entry.ignoreCase ?? true;
+  pron.editView.elements['pron-lang'].value = entry.lang ?? (JA_RE.test(entry.phrase ?? '') ? 'ja' : 'en');
+  pron.del.hidden = !editing;
+  pron.advanced.open = false;
+  autoPick = fresh;
+  candidates = [];
+  pron.original.textContent = '';
+  pron.candidatesStatus.textContent = '';
+  if (!pron.sheet.open) pron.sheet.showModal();
+  showView('edit');
+  syncLang();
+  suggest(0);
+  (pron.phrase.value ? pron.sounds : pron.phrase).focus();
+}
+
+function syncLang() {
+  const ja = editLang() === 'ja';
+  pron.soundsLabel.textContent = ja ? 'Reading' : 'Sounds like';
+  pron.sounds.placeholder = ja ? 'e.g. ぬし' : 'e.g. pah-ROH-lee';
+  pron.soundsHint.textContent = ja
+    ? 'Type the reading in hiragana or katakana. It replaces the phrase when spoken.'
+    : 'Spell it the way it sounds. Separate syllables with hyphens and capitalize the stressed one.';
+  pron.advanced.hidden = ja;
+  pron.ignoreCase.closest('label').hidden = ja;
+}
+
+function suggest(delay = 350) {
+  clearTimeout(suggestTimer);
+  suggestTimer = setTimeout(runSuggest, delay);
+}
+
+async function runSuggest() {
+  const token = ++suggestToken;
+  const body = { phrase: pron.phrase.value.trim(), sounds_like: pron.sounds.value.trim(), lang: editLang() };
+  if (!body.phrase && !body.sounds_like) {
+    candidates = [];
+    pron.original.textContent = '';
+    renderCandidates();
+    return;
+  }
+  try {
+    const res = await fetch(`${settings.server}/pronunciations/suggest`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(res.status === 404 ? 'This server is too old to suggest pronunciations — update Paroli.' : `Server returned ${res.status}`);
+    const data = await res.json();
+    if (token !== suggestToken) return;
+    candidates = data.candidates;
+    alphabet = data.alphabet || alphabet;
+    pron.original.textContent = data.original ? `Currently: /${data.original}/` : '';
+    pron.candidatesStatus.textContent = '';
+    if (autoPick && editLang() === 'en') pron.phonemes.value = candidates[0]?.phonemes ?? '';
+  } catch (err) {
+    if (token !== suggestToken) return;
+    candidates = [];
+    pron.candidatesStatus.textContent = err.name === 'TypeError'
+      ? `Can't reach the server for suggestions. You can still type phonemes under Phonemes.`
+      : err.message;
+  }
+  renderCandidates();
+}
+
+function currentEntry() {
+  return {
+    phrase: pron.phrase.value, lang: editLang(), soundsLike: pron.sounds.value,
+    phonemes: pron.phonemes.value, ignoreCase: pron.ignoreCase.checked,
+  };
+}
+
+function renderCandidates() {
+  const ja = editLang() === 'ja';
+  const chosen = pron.phonemes.value.trim();
+  const rows = ja ? candidates.slice(0, 1) : [...candidates];
+  if (!ja && chosen && !rows.some((c) => c.phonemes === chosen)) rows.unshift({ phonemes: chosen, label: 'Custom' });
+  pron.candidates.replaceChildren(...rows.map((c) => {
+    const li = document.createElement('li');
+    const checked = ja || c.phonemes === chosen;
+    li.setAttribute('role', 'radio');
+    li.setAttribute('aria-checked', checked);
+    li.tabIndex = 0;
+    const tick = document.createElement('span');
+    tick.className = 'tick';
+    tick.textContent = '✓';
+    const main = document.createElement('div');
+    main.className = 'row-main';
+    const label = document.createElement('strong');
+    label.textContent = c.label;
+    const ph = document.createElement('span');
+    ph.className = 'phon';
+    ph.textContent = `/${c.phonemes}/`;
+    main.append(label, ph);
+    const pick = () => {
+      if (ja) return;
+      autoPick = false;
+      pron.phonemes.value = c.phonemes;
+      renderCandidates();
+    };
+    li.addEventListener('click', pick);
+    li.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pick(); } });
+    li.append(tick, main, playButton(`Play ${c.label}`, (b) => { pick(); preview(currentEntry(), b, c.phonemes); }));
+    return li;
+  }));
+  if (!rows.length && !pron.candidatesStatus.textContent) {
+    pron.candidatesStatus.textContent = pron.sounds.value.trim()
+      ? (pron.phrase.value.trim() ? 'No suggestions — try a different spelling.' : '')
+      : `Type how it ${ja ? 'reads' : 'sounds'} to see options you can listen to.`;
+  }
+  validate();
+}
+
+function validate() {
+  const entry = currentEntry();
+  const ph = entry.phonemes.trim();
+  let warning = '';
+  if (entry.lang === 'en' && ph) {
+    if (PHONEME_FORBIDDEN.test(ph)) warning = 'Phonemes can’t contain [ ] ( ) or /.';
+    else if (alphabet) {
+      const unknown = [...new Set([...ph].filter((c) => !alphabet.includes(c)))];
+      if (unknown.length) warning = `Kokoro will skip these unknown symbols: ${unknown.join(' ')}`;
+    }
+  }
+  pron.phonemesWarning.textContent = warning;
+  pron.phonemesWarning.hidden = !warning;
+  if (warning) pron.advanced.open = true;
+  const key = entry.phrase.trim().toLowerCase();
+  const dup = key && pronunciations.find((e) => e.id !== editing && e.lang === entry.lang && e.phrase.trim().toLowerCase() === key);
+  pron.dup.textContent = dup ? `Saving replaces the existing pronunciation for “${dup.phrase}”.` : '';
+  pron.dup.hidden = !dup;
+  pron.save.disabled = !isUsable(entry) || PHONEME_FORBIDDEN.test(ph);
+}
+
+async function commitPronunciations(list) {
+  pronunciations = list;
+  await savePronunciations(list);
+  updatePronCount();
+  invalidateAudio();
+}
+
+pron.editView.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const entry = currentEntry();
+  if (pron.save.disabled) return;
+  entry.phrase = entry.phrase.trim();
+  entry.soundsLike = entry.soundsLike.trim();
+  entry.phonemes = entry.lang === 'en' ? entry.phonemes.trim() : '';
+  entry.id = editing ?? crypto.randomUUID();
+  const key = entry.phrase.toLowerCase();
+  const rest = pronunciations.filter((x) => x.id !== entry.id && !(x.lang === entry.lang && x.phrase.trim().toLowerCase() === key));
+  await commitPronunciations([...rest, entry]);
+  showView('list');
+});
+pron.del.addEventListener('click', async () => {
+  await commitPronunciations(pronunciations.filter((x) => x.id !== editing));
+  showView('list');
+});
+
+pron.phrase.addEventListener('input', () => { suggest(); validate(); });
+pron.sounds.addEventListener('input', () => { autoPick ||= !pron.phonemes.value.trim(); suggest(); validate(); });
+pron.phonemes.addEventListener('input', () => { autoPick = false; renderCandidates(); });
+pron.editView.addEventListener('change', (e) => {
+  if (e.target.name !== 'pron-lang') return;
+  syncLang();
+  suggest(0);
+});
+pron.ignoreCase.addEventListener('change', validate);
+$('pron-play-original').addEventListener('click', (e) => {
+  preview({ phrase: pron.phrase.value, lang: editLang() }, e.currentTarget);
+});
+$('pron-play-phonemes').addEventListener('click', (e) => preview(currentEntry(), e.currentTarget));
+$('pron-add').addEventListener('click', () => openEditor());
+$('pron-back').addEventListener('click', () => showView('list'));
+$('pron-close').addEventListener('click', () => pron.sheet.close());
+$('open-pron').addEventListener('click', openPronunciations);
+pron.search.addEventListener('input', renderPronList);
+$('pron-export').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob([exportPronunciations(pronunciations)], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: 'paroli-pronunciations.json' });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+$('pron-import').addEventListener('click', () => $('pron-file').click());
+$('pron-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const result = $('pron-transfer-result');
+  try {
+    const { list, added, replaced, skipped } = importPronunciations(await file.text(), pronunciations);
+    await commitPronunciations(list);
+    renderPronList();
+    result.textContent = [`Imported ${added} new`, replaced && `${replaced} updated`, skipped && `${skipped} skipped`]
+      .filter(Boolean).join(' · ');
+  } catch (err) {
+    result.textContent = `Couldn’t import: ${err instanceof SyntaxError ? 'the file isn’t valid JSON.' : err.message}`;
+  }
+});
+pron.sheet.addEventListener('close', endPreview);
+// Esc inside the editor goes back to the list instead of closing the whole sheet
+pron.sheet.addEventListener('cancel', (e) => {
+  if (pron.editView.hidden) return;
+  e.preventDefault();
+  showView('list');
+});
+
+// Selecting a word in the reader offers a shortcut to fix how it's said
+function selectedPhrase() {
+  const sel = getSelection();
+  if (!sel.rangeCount || sel.isCollapsed || !el.doc.contains(sel.anchorNode)) return '';
+  const text = sel.toString().trim();
+  return text && text.length <= 60 && !/\n/.test(text) ? text : '';
+}
+
+function placeFixButton() {
+  const text = selectedPhrase();
+  pron.fix.hidden = !text;
+  if (!text) return;
+  const rect = getSelection().getRangeAt(0).getBoundingClientRect();
+  pron.fix.style.left = `${Math.min(Math.max(rect.left + rect.width / 2, 70), innerWidth - 70)}px`;
+  pron.fix.style.top = `${Math.max(rect.top, 40)}px`;
+}
+
+document.addEventListener('selectionchange', () => { if (!selectedPhrase()) pron.fix.hidden = true; });
+el.doc.addEventListener('mouseup', () => setTimeout(placeFixButton));
+$('text').addEventListener('scroll', () => { pron.fix.hidden = true; });
+pron.fix.addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
+pron.fix.addEventListener('click', () => {
+  const phrase = selectedPhrase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+  pron.fix.hidden = true;
+  if (!phrase) return;
+  const existing = pronunciations.find((e) => e.phrase.trim().toLowerCase() === phrase.toLowerCase());
+  getSelection().removeAllRanges();
+  openEditor(existing ?? { phrase });
+});
+
 (async () => {
   windowId = (await chrome.windows.getCurrent()).id;
   await loadSettings();
+  pronunciations = await loadPronunciations();
+  updatePronCount();
   updateUI();
   await takePending();
   await loadVoices();

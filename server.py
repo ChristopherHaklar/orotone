@@ -154,6 +154,77 @@ def stream_tts(text: str, voice_id: str, speed: float = 1.0):
         yield from _synth(voice2lang.get(voice_id, "a"), text, voice_id, speed)
 
 
+# ---------- custom pronunciations ----------
+# The English G2P accepts inline overrides like "[Paroli](/pəɹˈOli/)", so clients store a phrase plus
+# phonemes and wrap matches before sending. These helpers turn a "sounds like" respelling into
+# phoneme candidates the user can audition, the way Apple's Pronunciations screen offers choices.
+
+_STRESS = str.maketrans("", "", "ˈˌ")
+_VOWELS = set("AIOQWYaeiouæɑɒɔəɛɜɪʊʌᵻɚɐ")
+_SYLLABLE_SPLIT = re.compile(r"[\s\-.·]+")
+MAX_CANDIDATES = 6
+
+
+def g2p(lang, text):
+    with _synth_lock:
+        phonemes, _ = pipelines[lang].g2p(text)
+    return phonemes.strip()
+
+
+def _stress(syllable):
+    for k, ch in enumerate(syllable):
+        if ch in _VOWELS:
+            return syllable[:k] + "ˈ" + syllable[k:]
+    return "ˈ" + syllable
+
+
+def suggest_en(sounds_like):
+    """Phoneme candidates for an English respelling such as "pah-ROH-lee", best guess first."""
+    text = sounds_like.strip()
+    syllables = [s for s in _SYLLABLE_SPLIT.split(text) if s]
+    candidates = []
+
+    def add(phonemes, label):
+        phonemes = phonemes.strip()
+        if phonemes and "❓" not in phonemes and all(c["phonemes"] != phonemes for c in candidates):
+            candidates.append({"phonemes": phonemes, "label": label})
+
+    if len(syllables) > 1:
+        # Capitals mark stress in respellings, but the G2P would spell them out as an acronym,
+        # so phonemize each syllable in lowercase and place the stress ourselves
+        bare = [g2p("a", s.lower()).translate(_STRESS).replace(" ", "") for s in syllables]
+        marked = [i for i, s in enumerate(syllables) if s.isupper() and not text.isupper()]
+        orders = ([marked] if marked else []) + [[i] for i in range(len(syllables)) if [i] != marked]
+        for stressed in orders:
+            phonemes = "".join(_stress(b) if i in stressed else b for i, b in enumerate(bare))
+            label = "-".join(s.upper() if i in stressed else s.lower() for i, s in enumerate(syllables))
+            add(phonemes, label)
+    joined = "".join(syllables).lower()
+    add(g2p("a", joined), joined)
+    return candidates[:MAX_CANDIDATES]
+
+
+class SuggestRequest(BaseModel):
+    phrase: str = ""
+    sounds_like: str = ""
+    lang: str = Field("en", pattern="^(en|ja)$")
+
+
+@app.post("/v1/pronunciations/suggest")
+def suggest_pronunciation(req: SuggestRequest):
+    pipe = "j" if req.lang == "ja" else "a"
+    original = g2p(pipe, req.phrase) if req.phrase.strip() else ""
+    if not req.sounds_like.strip():
+        candidates = []
+    elif req.lang == "ja":
+        # Japanese has no inline phoneme override; the reading itself replaces the phrase
+        candidates = [{"phonemes": g2p("j", req.sounds_like), "label": req.sounds_like.strip()}]
+    else:
+        candidates = suggest_en(req.sounds_like)
+    alphabet = "".join(sorted(pipelines["a"].model.vocab)) if pipelines["a"].model else ""
+    return {"original": original, "candidates": candidates, "alphabet": alphabet}
+
+
 class TTSRequest(BaseModel):
     input: str
     voice: str = DEFAULT_VOICE
