@@ -1,6 +1,6 @@
 <p align="center"><img src="assets/logo.svg" alt="" width="112"></p>
 
-<h1 align="center">paroli</h1>
+<h1 align="center">orotone</h1>
 
 A lightweight TTS (text-to-speech) REST server built on [Kokoro](https://github.com/hexgrad/kokoro), with support for English and Japanese voices and automatic language mixing.
 
@@ -35,9 +35,9 @@ Unknown fields (e.g. `model`) are silently ignored, so OpenAI-compatible TTS cli
 
 ### Custom pronunciations
 
-English input accepts inline phoneme overrides in misaki's link syntax, e.g. `"I use [Paroli](/pɑɹˈOli/) daily"`. Japanese has no equivalent, so substitute the reading (`主` → `ぬし`) in the text instead.
+English input accepts inline phoneme overrides in misaki's link syntax, e.g. `"I use [Orotone](/ˈɔɹətˌOn/) daily"`. Japanese has no equivalent, so substitute the reading (`主` → `ぬし`) in the text instead.
 
-`POST /v1/pronunciations/suggest` takes `{"phrase": "Paroli", "sounds_like": "pah-ROH-lee", "lang": "en"}` and returns the phrase's current phonemes (`original`), a list of `candidates` (`{phonemes, label}`, best guess first, with the capitalized syllable stressed and the alternatives stressing each other syllable), and the model's phoneme `alphabet`. With `"lang": "ja"`, the candidate is just the reading.
+`POST /v1/pronunciations/suggest` takes `{"phrase": "Orotone", "sounds_like": "OR-oh-tone", "lang": "en"}` and returns the phrase's current phonemes (`original`), a list of `candidates` (`{phonemes, label}`, best guess first, with the capitalized syllable stressed and the alternatives stressing each other syllable), and the model's phoneme `alphabet`. With `"lang": "ja"`, the candidate is just the reading.
 
 ### Response format
 
@@ -52,13 +52,13 @@ curl -X POST http://localhost:8000/v1/audio/speech \
   --output speech.wav
 ```
 
-## Browser integration — Paroli Reader extension
+## Browser integration — Orotone Reader extension
 
 `extension/` contains a Chrome extension built for this server. It splits text into sentences, requests one sentence at a time while prefetching the next few, and starts speaking as soon as the first sentence is ready instead of waiting for the whole selection.
 
 **Install:** open `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and pick the `extension/` folder (Chrome 116+).
 
-**Use:** select text and press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>, or right-click → **Read with Paroli**. The side panel shows the text with the current sentence highlighted.
+**Use:** select text and press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>, or right-click → **Read with Orotone**. The side panel shows the text with the current sentence highlighted.
 
 - Click any sentence, or drag the progress bar, to jump there
 - Transport: play/pause, stop, previous/next sentence
@@ -95,8 +95,8 @@ The `mix` voice is the standout option here — it auto-detects Japanese script 
 **Docker (recommended):**
 
 ```bash
-docker build -t paroli .
-docker run -d --restart unless-stopped --name paroli --gpus all -p 8000:8000 paroli
+docker build -t orotone .
+docker run -d --restart unless-stopped --name orotone --gpus all -p 8000:8000 orotone
 ```
 
 The build bakes the Kokoro model weights directly into the image, so startup is fast but the image is large (~a few GB). No model downloads happen at runtime.

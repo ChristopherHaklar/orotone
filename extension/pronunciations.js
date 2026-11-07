@@ -1,5 +1,5 @@
 // Custom pronunciations: { id, phrase, lang: 'en' | 'ja', soundsLike, phonemes, ignoreCase }.
-// English entries are sent as Kokoro/misaki inline overrides ("[Paroli](/pɑɹˈOli/)"); Japanese has no
+// English entries are sent as Kokoro/misaki inline overrides ("[Orotone](/ˈɔɹətˌOn/)"); Japanese has no
 // such syntax, so a Japanese entry's reading (soundsLike, in kana) simply replaces the phrase.
 
 const KEY = 'pronunciations';
@@ -21,7 +21,7 @@ export function savePronunciations(list) {
 export function exportPronunciations(list) {
   const entries = list.map(({ phrase, lang, soundsLike, phonemes, ignoreCase }) =>
     ({ phrase, lang, soundsLike, phonemes, ignoreCase }));
-  return JSON.stringify({ format: 'paroli-pronunciations', version: 1, entries }, null, 2);
+  return JSON.stringify({ format: 'orotone-pronunciations', version: 1, entries }, null, 2);
 }
 
 // Parses an export (or a bare array of entries) and merges it in: imported entries replace
@@ -29,7 +29,7 @@ export function exportPronunciations(list) {
 export function importPronunciations(json, existing) {
   const data = JSON.parse(json);
   const raw = Array.isArray(data) ? data : data?.entries;
-  if (!Array.isArray(raw)) throw new Error('Not a Paroli pronunciations file.');
+  if (!Array.isArray(raw)) throw new Error('Not an Orotone pronunciations file.');
   const key = (e) => `${e.lang}\u0000${e.phrase.trim().toLowerCase()}`;
   const byKey = new Map(existing.map((e) => [key(e), e]));
   let added = 0, replaced = 0, skipped = 0;

@@ -1,5 +1,5 @@
 """
-Quick functional test for the Paroli TTS server.
+Quick functional test for the Orotone TTS server.
 Run with: pytest test_server.py -v
 """
 import struct
@@ -75,14 +75,14 @@ def test_tts_default_voice():
 
 
 def test_suggest_english_respelling():
-    r = client.post("/v1/pronunciations/suggest", json={"phrase": "Paroli", "sounds_like": "pah-ROH-lee"})
+    r = client.post("/v1/pronunciations/suggest", json={"phrase": "Orotone", "sounds_like": "OR-oh-tone"})
     assert r.status_code == 200
     data = r.json()
     assert data["original"]
     assert data["alphabet"]
     first = data["candidates"][0]
-    assert first["label"] == "pah-ROH-lee"
-    assert "ˈO" in first["phonemes"]  # stress lands on the capitalized syllable
+    assert first["label"] == "OR-oh-tone"
+    assert first["phonemes"].startswith("ˈɔ")  # stress lands on the capitalized syllable
     assert len({c["phonemes"] for c in data["candidates"]}) == len(data["candidates"])
 
 
@@ -98,6 +98,6 @@ def test_suggest_rejects_unknown_lang():
 
 
 def test_tts_inline_phoneme_override():
-    r = client.post("/v1/audio/speech", json={"input": "ぬし said [Paroli](/pɑɹˈOli/).", "voice": "mix"})
+    r = client.post("/v1/audio/speech", json={"input": "ぬし said [Orotone](/ˈɔɹətˌOn/).", "voice": "mix"})
     assert r.status_code == 200
     _check_wav(r.content)

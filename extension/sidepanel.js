@@ -446,7 +446,7 @@ async function readSelection() {
   try {
     text = tab ? await getSelectionText(tab.id) : '';
   } catch {
-    showError("Can't read this page's selection. Use right-click → Read with Paroli, or paste the text.");
+    showError("Can't read this page's selection. Use right-click → Read with Orotone, or paste the text.");
     return;
   }
   if (text.trim()) loadText(text, true);
@@ -720,7 +720,7 @@ async function runSuggest() {
     const res = await fetch(`${settings.server}/pronunciations/suggest`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(res.status === 404 ? 'This server is too old to suggest pronunciations — update Paroli.' : `Server returned ${res.status}`);
+    if (!res.ok) throw new Error(res.status === 404 ? 'This server is too old to suggest pronunciations — update Orotone.' : `Server returned ${res.status}`);
     const data = await res.json();
     if (token !== suggestToken) return;
     candidates = data.candidates;
@@ -852,7 +852,7 @@ $('open-pron').addEventListener('click', openPronunciations);
 pron.search.addEventListener('input', renderPronList);
 $('pron-export').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob([exportPronunciations(pronunciations)], { type: 'application/json' }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: 'paroli-pronunciations.json' });
+  const a = Object.assign(document.createElement('a'), { href: url, download: 'orotone-pronunciations.json' });
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });

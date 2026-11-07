@@ -3,6 +3,7 @@ httpx==0.28.1
 kokoro==0.9.4
 misaki==0.9.4
 numpy==2.4.2
+transformers==4.57.6  # 5.x needs torch>=2.6; the cu121 wheels stop at 2.5.1
 uvicorn==0.41.0
 
 # English language support

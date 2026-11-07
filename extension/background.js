@@ -2,7 +2,7 @@ import { getSelectionText } from './selection.js';
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'paroli-read', title: 'Read with Paroli', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'orotone-read', title: 'Read with Orotone', contexts: ['selection'] });
   });
 });
 
@@ -23,7 +23,7 @@ async function sendToPanel(tab, fallbackText = '') {
 
 // sidePanel.open must be called synchronously inside the user gesture, before any await
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== 'paroli-read' || !tab) return;
+  if (info.menuItemId !== 'orotone-read' || !tab) return;
   chrome.sidePanel.open({ windowId: tab.windowId });
   sendToPanel(tab, info.selectionText);
 });

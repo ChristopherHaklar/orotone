@@ -23,7 +23,7 @@ logging.getLogger("misaki").setLevel(logging.ERROR)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 _req_id = itertools.count(1)
-VERBOSE = os.getenv("PAROLI_VERBOSE", "").lower() in ("1", "true", "yes")
+VERBOSE = os.getenv("OROTONE_VERBOSE", "").lower() in ("1", "true", "yes")
 
 log.info("device=%s", "cuda" if torch.cuda.is_available() else "cpu")
 
@@ -155,7 +155,7 @@ def stream_tts(text: str, voice_id: str, speed: float = 1.0):
 
 
 # ---------- custom pronunciations ----------
-# The English G2P accepts inline overrides like "[Paroli](/pəɹˈOli/)", so clients store a phrase plus
+# The English G2P accepts inline overrides like "[Orotone](/ˈɔɹətˌOn/)", so clients store a phrase plus
 # phonemes and wrap matches before sending. These helpers turn a "sounds like" respelling into
 # phoneme candidates the user can audition, the way Apple's Pronunciations screen offers choices.
 
