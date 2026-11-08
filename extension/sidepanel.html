@@ -8,6 +8,10 @@
 </head>
 <body>
   <header class="bar">
+    <div class="status">
+      <span id="lang" class="badge" hidden></span>
+      <span id="status">Ready</span>
+    </div>
     <div class="transport">
       <button id="prev" class="icon" title="Previous sentence (←)" aria-label="Previous sentence">
         <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg>
@@ -23,9 +27,13 @@
         <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>
       </button>
     </div>
-    <div class="status">
-      <span id="lang" class="badge" hidden></span>
-      <span id="status">Ready</span>
+    <div class="tools">
+      <button id="new" class="icon" title="New text" aria-label="New text">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button id="open-settings" class="icon" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
     </div>
   </header>
 
@@ -62,12 +70,6 @@
     <div class="tools">
       <button id="follow" class="icon toggle" title="Follow along (auto-scroll)" aria-label="Follow along" aria-pressed="true">
         <svg viewBox="0 0 24 24"><path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <button id="new" class="icon" title="New text" aria-label="New text">
-        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      </button>
-      <button id="open-settings" class="icon" title="Settings" aria-label="Settings">
-        <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
       </button>
     </div>
   </footer>

@@ -58,11 +58,12 @@ button, select, input, textarea { font: inherit; color: inherit; }
 
 header.bar {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   border-bottom: 1px solid var(--border);
 }
 header .transport { grid-column: 2; }
-header .status { grid-column: 3; justify-self: end; }
+header .status { grid-column: 1; grid-row: 1; justify-self: start; }
+header .tools { grid-column: 3; grid-row: 1; justify-self: end; }
 footer.bar { border-top: 1px solid var(--border); flex-wrap: wrap; }
 
 .transport { display: flex; align-items: center; gap: 4px; }
