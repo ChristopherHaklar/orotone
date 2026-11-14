@@ -1,11 +1,15 @@
 import { getSelectionText } from './selection.js';
-import { expandAbbreviations } from './abbreviations.js';
+import {
+  CONTEXTS, activeCount, activeRules, builtinChanges, cleanEntry, defaultFor, examplesFor, expandAbbreviations,
+  exportAbbreviations, importAbbreviations, isUsableAbbreviation, listAbbreviations, loadAbbreviations,
+  putAbbreviation, removeAbbreviation, restoreBuiltins, restoreDefault, saveAbbreviations, setEnabled,
+} from './abbreviations.js';
 import {
   applyPronunciations, loadPronunciations, savePronunciations, previewInput, isUsable, PHONEME_FORBIDDEN,
   exportPronunciations, importPronunciations,
 } from './pronunciations.js';
 
-const DEFAULTS = { server: 'http://localhost:8000/v1', voice: 'af_heart', speed: 1.5, follow: true, expandAbbreviations: true };
+const DEFAULTS = { server: 'http://localhost:8000/v1', voice: 'af_heart', speed: 1.5, follow: true, usePronunciations: true, expandAbbreviations: true };
 const FALLBACK_VOICES = [
   { voice: 'af_heart', lang: 'en-US' },
   { voice: 'jf_alpha', lang: 'ja-JP' },
@@ -24,13 +28,15 @@ const el = {
   play: $('play'), prev: $('prev'), next: $('next'), stop: $('stop'),
   status: $('status'), lang: $('lang'), seek: $('seek'), count: $('count'), error: $('error'), errorText: $('error-text'), errorSettings: $('error-settings'),
   empty: $('empty'), doc: $('doc'), paste: $('paste'),
-  voice: $('voice'), speed: $('speed'), speedValue: $('speed-value'), follow: $('follow'), expandAbbr: $('expand-abbr'),
+  voice: $('voice'), speed: $('speed'), speedValue: $('speed-value'), follow: $('follow'),
   settings: $('settings'), server: $('server'), serverResult: $('server-result'),
 };
 
 let settings = { ...DEFAULTS };
 let voices = FALLBACK_VOICES;
 let pronunciations = [];
+let abbreviations = { custom: [], edits: {}, disabled: [], removed: [] };
+let abbrRules = [];
 let sentences = [];       // { text, display, para, lang }
 let spans = [];
 let current = -1;
@@ -131,8 +137,8 @@ function langsFor(voiceId) {
 
 function fetchAudio(sentence, signal) {
   const langs = langsFor(settings.voice);
-  let input = applyPronunciations(sentence.text, pronunciations, langs);
-  if (settings.expandAbbreviations && langs.has('en')) input = expandAbbreviations(input);
+  let input = settings.usePronunciations ? applyPronunciations(sentence.text, pronunciations, langs) : sentence.text;
+  if (settings.expandAbbreviations && langs.has('en')) input = expandAbbreviations(input, abbrRules);
   return synthesize(input, settings.voice, signal);
 }
 
@@ -404,7 +410,7 @@ async function loadSettings() {
   el.speedValue.textContent = `${Number(settings.speed).toFixed(1)}×`;
   el.follow.setAttribute('aria-pressed', settings.follow);
   el.server.value = settings.server;
-  el.expandAbbr.checked = settings.expandAbbreviations;
+  syncSwitches();
 }
 
 function saveSetting(key, value) {
@@ -496,10 +502,23 @@ el.voice.addEventListener('change', () => {
   invalidateAudio();
 });
 el.speed.addEventListener('input', () => changeSpeed(Number(el.speed.value)));
-el.expandAbbr.addEventListener('change', () => {
-  saveSetting('expandAbbreviations', el.expandAbbr.checked);
-  invalidateAudio();
-});
+
+// On/off switches for the speech options, on the settings screen and at the top of each page
+function syncSwitches() {
+  for (const input of document.querySelectorAll('input[data-setting]')) input.checked = settings[input.dataset.setting];
+  $('pron-row').classList.toggle('off', !settings.usePronunciations);
+  $('abbr-row').classList.toggle('off', !settings.expandAbbreviations);
+  $('abbr-builtin').classList.toggle('dimmed', !settings.expandAbbreviations);
+  $('abbr-custom').classList.toggle('dimmed', !settings.expandAbbreviations);
+  $('pron-list').classList.toggle('dimmed', !settings.usePronunciations);
+}
+for (const input of document.querySelectorAll('input[data-setting]')) {
+  input.addEventListener('change', () => {
+    saveSetting(input.dataset.setting, input.checked);
+    syncSwitches();
+    invalidateAudio();
+  });
+}
 
 el.follow.addEventListener('click', () => {
   saveSetting('follow', !settings.follow);
@@ -919,11 +938,210 @@ pron.fix.addEventListener('click', () => {
   openEditor(existing ?? { phrase });
 });
 
+// ---------- abbreviations ----------
+
+const abbr = {
+  sheet: $('abbr'), listView: $('abbr-list-view'), editView: $('abbr-edit-view'),
+  custom: $('abbr-custom'), customEmpty: $('abbr-custom-empty'), builtin: $('abbr-builtin'), builtinEmpty: $('abbr-builtin-empty'),
+  restoreAll: $('abbr-restore-all'), search: $('abbr-search'), count: $('abbr-count'), result: $('abbr-transfer-result'),
+  title: $('abbr-edit-title'), text: $('abbr-text'), expansion: $('abbr-expansion'), expansionLabel: $('abbr-expansion-label'),
+  plural: $('abbr-plural'), pluralRow: $('abbr-plural-row'), pluralHint: $('abbr-plural-hint'),
+  optionalDot: $('abbr-optional-dot'), optionalDotRow: $('abbr-optional-dot-row'), when: $('abbr-when'),
+  examples: $('abbr-examples'), dup: $('abbr-dup'), defaultNote: $('abbr-default'),
+  restore: $('abbr-restore'), del: $('abbr-delete'), save: $('abbr-save'),
+};
+let editingAbbr = null; // the entry being edited (from listAbbreviations), or null for a new one
+
+abbr.when.append(...Object.entries(CONTEXTS).map(([value, label]) => new Option(label, value)));
+
+function updateAbbrCount() {
+  abbr.count.textContent = activeCount(abbreviations);
+}
+
+const contextLabel = (when) => CONTEXTS[when].toLowerCase();
+const readAs = (e) => (e.plural ? `${e.expansion} / ${e.plural}` : e.expansion);
+
+function abbrRow(entry) {
+  const li = document.createElement('li');
+  li.className = entry.enabled ? 'row' : 'row off';
+  li.tabIndex = 0;
+  const main = document.createElement('div');
+  main.className = 'row-main';
+  const name = document.createElement('strong');
+  name.textContent = entry.abbr;
+  const sub = document.createElement('span');
+  sub.className = 'muted';
+  sub.textContent = `${readAs(entry)}  ·  ${contextLabel(entry.when)}`;
+  main.append(name, sub);
+  li.append(main);
+  if (entry.edited) {
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = 'Edited';
+    li.append(badge);
+  }
+  const toggle = document.createElement('span');
+  toggle.className = 'switch';
+  toggle.innerHTML = '<input type="checkbox" role="switch"><span></span>';
+  const input = toggle.firstChild;
+  input.checked = entry.enabled;
+  input.ariaLabel = `${entry.abbr} → ${readAs(entry)}`;
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('change', () => commitAbbreviations(setEnabled(abbreviations, entry.id, input.checked)));
+  li.append(toggle);
+  li.addEventListener('click', () => openAbbrEditor(entry));
+  li.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === li) openAbbrEditor(entry); });
+  return li;
+}
+
+function renderAbbrList() {
+  const q = abbr.search.value.trim().toLowerCase();
+  const all = listAbbreviations(abbreviations);
+  const shown = all.filter((e) => !q || [e.abbr, e.expansion, e.plural ?? ''].some((f) => f.toLowerCase().includes(q)));
+  abbr.custom.replaceChildren(...shown.filter((e) => !e.builtin).sort((a, b) => a.abbr.localeCompare(b.abbr)).map(abbrRow));
+  abbr.builtin.replaceChildren(...shown.filter((e) => e.builtin).map(abbrRow));
+  abbr.customEmpty.hidden = all.some((e) => !e.builtin);
+  abbr.builtinEmpty.hidden = all.some((e) => e.builtin);
+  const changes = builtinChanges(abbreviations);
+  abbr.restoreAll.disabled = !changes;
+  abbr.restoreAll.textContent = changes ? `Restore Built-ins (${changes} changed)` : 'Restore Built-ins';
+}
+
+function showAbbrView(view) {
+  abbr.listView.hidden = view !== 'list';
+  abbr.editView.hidden = view !== 'edit';
+  if (view === 'list') renderAbbrList();
+}
+
+function openAbbreviations() {
+  if (el.settings.open) el.settings.close();
+  abbr.search.value = '';
+  abbr.result.textContent = '';
+  showAbbrView('list');
+  if (!abbr.sheet.open) abbr.sheet.showModal();
+}
+
+function currentAbbr() {
+  return {
+    id: editingAbbr?.id, abbr: abbr.text.value, expansion: abbr.expansion.value, plural: abbr.plural.value,
+    when: abbr.when.value, optionalDot: abbr.optionalDot.checked,
+  };
+}
+
+function validateAbbr() {
+  const entry = currentAbbr();
+  const counted = entry.when === 'after-number';
+  abbr.pluralRow.hidden = abbr.pluralHint.hidden = !counted;
+  abbr.expansionLabel.textContent = counted ? 'Read as (singular)' : 'Read as';
+  abbr.optionalDotRow.hidden = !entry.abbr.trim().endsWith('.');
+
+  const usable = isUsableAbbreviation(entry);
+  abbr.examples.replaceChildren(...(usable ? examplesFor(entry) : []).map(([before, after]) => {
+    const li = document.createElement('li');
+    li.append('“', Object.assign(document.createElement('b'), { textContent: before }), '” is read as “',
+      Object.assign(document.createElement('b'), { textContent: after }), '”');
+    return li;
+  }));
+
+  const def = editingAbbr?.builtin && defaultFor(editingAbbr.id);
+  const changed = def && JSON.stringify(cleanEntry(entry)) !== JSON.stringify(cleanEntry(def));
+  abbr.restore.hidden = !changed;
+  abbr.defaultNote.hidden = !changed;
+  if (changed) abbr.defaultNote.textContent = `Default: “${def.abbr}” → “${readAs(def)}”, ${contextLabel(def.when)}.`;
+
+  const key = entry.abbr.trim();
+  const dup = key && listAbbreviations(abbreviations).find((e) => e.id !== entry.id && e.abbr === key && e.when === entry.when);
+  abbr.dup.textContent = !dup ? ''
+    : dup.builtin && !editingAbbr?.builtin ? `This takes priority over the built-in “${dup.abbr}” → “${readAs(dup)}”.`
+    : dup.builtin ? `Another built-in already reads “${dup.abbr}” as “${readAs(dup)}” here.`
+    : `Saving replaces your existing “${dup.abbr}” → “${readAs(dup)}”.`;
+  abbr.dup.hidden = !dup;
+  abbr.save.disabled = !usable;
+}
+
+function openAbbrEditor(entry = null) {
+  editingAbbr = entry;
+  abbr.title.textContent = entry ? 'Edit Abbreviation' : 'New Abbreviation';
+  abbr.text.value = entry?.abbr ?? '';
+  abbr.expansion.value = entry?.expansion ?? '';
+  abbr.plural.value = entry?.plural ?? '';
+  abbr.when.value = entry?.when ?? 'always';
+  abbr.optionalDot.checked = !!entry?.optionalDot;
+  abbr.del.hidden = !entry;
+  if (!abbr.sheet.open) abbr.sheet.showModal();
+  showAbbrView('edit');
+  validateAbbr();
+  (abbr.text.value ? abbr.expansion : abbr.text).focus();
+}
+
+async function commitAbbreviations(state) {
+  abbreviations = state;
+  abbrRules = activeRules(state);
+  await saveAbbreviations(state);
+  updateAbbrCount();
+  invalidateAudio();
+  if (!abbr.listView.hidden) renderAbbrList();
+}
+
+abbr.editView.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (abbr.save.disabled) return;
+  await commitAbbreviations(putAbbreviation(abbreviations, currentAbbr()));
+  showAbbrView('list');
+});
+abbr.restore.addEventListener('click', async () => {
+  await commitAbbreviations(restoreDefault(abbreviations, editingAbbr.id));
+  showAbbrView('list');
+});
+abbr.del.addEventListener('click', async () => {
+  await commitAbbreviations(removeAbbreviation(abbreviations, editingAbbr.id));
+  showAbbrView('list');
+});
+abbr.restoreAll.addEventListener('click', async () => {
+  const n = builtinChanges(abbreviations);
+  if (!confirm(`Restore ${n} built-in abbreviation${n === 1 ? '' : 's'} to the default? Your custom ones are kept.`)) return;
+  await commitAbbreviations(restoreBuiltins(abbreviations));
+});
+for (const input of [abbr.text, abbr.expansion, abbr.plural, abbr.when, abbr.optionalDot]) input.addEventListener('input', validateAbbr);
+$('abbr-add').addEventListener('click', () => openAbbrEditor());
+$('abbr-back').addEventListener('click', () => showAbbrView('list'));
+$('abbr-close').addEventListener('click', () => abbr.sheet.close());
+$('open-abbr').addEventListener('click', openAbbreviations);
+abbr.search.addEventListener('input', renderAbbrList);
+abbr.sheet.addEventListener('cancel', (e) => {
+  if (abbr.editView.hidden) return;
+  e.preventDefault();
+  showAbbrView('list');
+});
+$('abbr-export').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob([exportAbbreviations(abbreviations)], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: 'orotone-abbreviations.json' });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+$('abbr-import').addEventListener('click', () => $('abbr-file').click());
+$('abbr-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const { state, added, replaced, skipped } = importAbbreviations(await file.text(), abbreviations);
+    await commitAbbreviations(state);
+    abbr.result.textContent = [`Imported ${added} new`, replaced && `${replaced} updated`, skipped && `${skipped} skipped`]
+      .filter(Boolean).join(' · ');
+  } catch (err) {
+    abbr.result.textContent = `Couldn’t import: ${err instanceof SyntaxError ? 'the file isn’t valid JSON.' : err.message}`;
+  }
+});
+
 (async () => {
   windowId = (await chrome.windows.getCurrent()).id;
   await loadSettings();
   pronunciations = await loadPronunciations();
   updatePronCount();
+  abbreviations = await loadAbbreviations();
+  abbrRules = activeRules(abbreviations);
+  updateAbbrCount();
   updateUI();
   await takePending();
   await loadVoices();

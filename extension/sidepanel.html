@@ -93,12 +93,22 @@
       </div>
 
       <h3>Speech</h3>
-      <button id="open-pron" type="button" class="nav-row">
-        <span>Pronunciations</span>
-        <span class="muted"><span id="pron-count"></span> ›</span>
-      </button>
-      <label class="check setting"><input id="expand-abbr" type="checkbox"> Expand abbreviations</label>
-      <p class="muted small">Reads “Nov. 12” as “November 12” and “Paul St.” as “Paul Street”.</p>
+      <ul class="list settings-list">
+        <li id="pron-row">
+          <span class="switch"><input id="use-pron" type="checkbox" role="switch" data-setting="usePronunciations" aria-label="Use custom pronunciations"><span></span></span>
+          <button id="open-pron" type="button" class="nav-row">
+            <span class="nav-label">Pronunciations<span class="muted small">How names and words are said</span></span>
+            <span class="muted"><span id="pron-count"></span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+        </li>
+        <li id="abbr-row">
+          <span class="switch"><input id="use-abbr" type="checkbox" role="switch" data-setting="expandAbbreviations" aria-label="Expand abbreviations"><span></span></span>
+          <button id="open-abbr" type="button" class="nav-row">
+            <span class="nav-label">Abbreviations<span class="muted small">“Nov. 12” → “November 12”</span></span>
+            <span class="muted"><span id="abbr-count"></span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+        </li>
+      </ul>
 
       <h3>Keyboard shortcuts</h3>
       <dl class="shortcuts">
@@ -121,6 +131,10 @@
           <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
       </div>
+      <label class="switch-row">
+        <span>Use pronunciations</span>
+        <span class="switch"><input type="checkbox" role="switch" data-setting="usePronunciations"><span></span></span>
+      </label>
       <input id="pron-search" type="search" placeholder="Search" aria-label="Search pronunciations">
       <ul id="pron-list" class="list"></ul>
       <div id="pron-empty" class="sheet-empty">
@@ -185,6 +199,73 @@
 
       <p id="pron-dup" class="muted small" hidden></p>
       <button id="pron-delete" type="button" class="danger wide" hidden>Delete Pronunciation</button>
+    </form>
+  </dialog>
+
+  <dialog id="abbr" class="sheet">
+    <section id="abbr-list-view" class="view">
+      <div class="sheet-head">
+        <button id="abbr-close" type="button" class="icon" title="Done" aria-label="Done"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <h2>Abbreviations</h2>
+        <button id="abbr-add" type="button" class="icon" title="Add abbreviation" aria-label="Add abbreviation">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <label class="switch-row">
+        <span>Expand abbreviations</span>
+        <span class="switch"><input type="checkbox" role="switch" data-setting="expandAbbreviations"><span></span></span>
+      </label>
+      <p class="muted small">Each one only applies where it’s unambiguous, so “Mt. Everest” becomes “Mount Everest” but “Mt” on its own is left alone.</p>
+      <input id="abbr-search" type="search" placeholder="Search" aria-label="Search abbreviations">
+      <div id="abbr-lists">
+        <h3 class="group-title">Custom</h3>
+        <ul id="abbr-custom" class="list boxed"></ul>
+        <p id="abbr-custom-empty" class="muted small">Tap <strong>+</strong> to add your own, like “Pkwy.” → “Parkway”.</p>
+        <h3 class="group-title">Built-in</h3>
+        <ul id="abbr-builtin" class="list boxed"></ul>
+        <p id="abbr-builtin-empty" class="muted small" hidden>All built-ins are deleted.</p>
+        <button id="abbr-restore-all" type="button" class="secondary wide">Restore Built-ins</button>
+      </div>
+      <div class="row transfer">
+        <button id="abbr-import" type="button" class="secondary">Import…</button>
+        <button id="abbr-export" type="button" class="secondary">Export</button>
+      </div>
+      <input id="abbr-file" type="file" accept=".json,application/json" hidden>
+      <p id="abbr-transfer-result" class="muted small"></p>
+    </section>
+
+    <form id="abbr-edit-view" class="view" hidden novalidate>
+      <div class="sheet-head">
+        <button id="abbr-back" type="button" class="icon" title="Back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <h2 id="abbr-edit-title">New Abbreviation</h2>
+        <button id="abbr-save" type="submit" class="small-btn">Save</button>
+      </div>
+      <div class="group">
+        <label class="field">
+          <span>Abbreviation</span>
+          <input id="abbr-text" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Pkwy." required>
+        </label>
+        <label class="check" id="abbr-optional-dot-row"><input id="abbr-optional-dot" type="checkbox"> Also match without the period</label>
+        <label class="field">
+          <span>When</span>
+          <select id="abbr-when"></select>
+        </label>
+        <label class="field">
+          <span id="abbr-expansion-label">Read as</span>
+          <input id="abbr-expansion" type="text" autocomplete="off" placeholder="e.g. Parkway" required>
+        </label>
+        <label class="field" id="abbr-plural-row">
+          <span>Plural <span class="muted">(optional)</span></span>
+          <input id="abbr-plural" type="text" autocomplete="off" placeholder="e.g. feet">
+        </label>
+        <p id="abbr-plural-hint" class="muted small">Used after any number except 1. “1 ft.” and “a 6-ft. fence” use the singular.</p>
+        <ul id="abbr-examples" class="examples"></ul>
+      </div>
+      <p class="muted small">Matching is case-sensitive, so “Ft.” and “ft.” can mean different things.</p>
+      <p id="abbr-dup" class="muted small" hidden></p>
+      <p id="abbr-default" class="muted small" hidden></p>
+      <button id="abbr-restore" type="button" class="secondary wide" hidden>Restore Default</button>
+      <button id="abbr-delete" type="button" class="danger wide" hidden>Delete Abbreviation</button>
     </form>
   </dialog>
 </body>
