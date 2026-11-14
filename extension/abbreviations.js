@@ -38,9 +38,20 @@ export const BUILTIN_ABBREVIATIONS = [
   b('avenue', 'Ave.', 'Avenue', 'always'),
   b('boulevard', 'Blvd.', 'Boulevard', 'always'),
   b('road', 'Rd.', 'Road', 'after-name'),
+  b('drive', 'Dr.', 'Drive', 'after-name'), // misaki always says "doctor"; Doctor before a name below
+  b('lane', 'Ln.', 'Lane', 'after-name'),
+  b('court', 'Ct.', 'Court', 'after-name'),
+  b('place', 'Pl.', 'Place', 'after-name'),
+  b('square', 'Sq.', 'Square', 'after-name'),
+  b('terrace', 'Ter.', 'Terrace', 'after-name'),
+  b('circle', 'Cir.', 'Circle', 'after-name'),
+  b('point', 'Pt.', 'Point', 'after-name'),
+  b('highway', 'Hwy.', 'Highway', 'always'),
+  b('parkway', 'Pkwy.', 'Parkway', 'always'),
   b('mount', 'Mt.', 'Mount', 'before-name'),
   b('fort', 'Ft.', 'Fort', 'before-name'),
 
+  b('doctor', 'Dr.', 'Doctor', 'before-name'),
   b('junior', 'Jr.', 'Junior', 'always'),
   b('senior', 'Sr.', 'Senior', 'always'),
   b('governor', 'Gov.', 'Governor', 'before-name'),
@@ -198,6 +209,36 @@ export function importAbbreviations(json, state) {
   return { state, added, replaced, skipped };
 }
 
+// ---------- sentence splitting ----------
+
+// Capitalized words that start sentences far more often than they follow "St." or "Dr." as a name,
+// so "Paul St. Then we left" reads Street and ends the sentence there
+const STARTERS = ['The', 'Then', 'This', 'That', 'These', 'Those', 'There', 'It', 'Its', 'I', 'We', 'He', 'She',
+  'They', 'You', 'A', 'An', 'But', 'And', 'So', 'In', 'On', 'At', 'After', 'Before', 'When', 'If', 'Our', 'His',
+  'Her', 'My', 'Their', 'Your'];
+const STARTER_RE = new RegExp(`^\\s*(?:${STARTERS.join('|')})(?![\\p{L}\\p{N}])`, 'u');
+
+// Titles misaki already reads well, but that still end a "sentence" for Intl.Segmenter
+const TITLES = ['Mr.', 'Mrs.', 'Ms.', 'Mx.'];
+const LAST_WORD_RE = /(?:^|\s)[("'“‘\[]*(\S+\.)\s*$/u;
+
+// Intl.Segmenter ends a sentence at "Oct." in "Oct. 24" and at "Dr." in "Dr. Smith", which reads
+// "24" and "Smith" as sentences of their own, out of reach of the rules above. Rejoin a piece to the
+// next when the period clearly isn't a full stop: the next piece starts with a number or a lowercase
+// letter, or the word is an abbreviation that comes before names (any such entry, even if off).
+export function joinSentences(pieces, state) {
+  const names = new Set([...TITLES, ...listAbbreviations(state).filter((e) => e.when === 'before-name').map((e) => e.abbr)]);
+  const out = [];
+  for (const piece of pieces) {
+    const prev = out.at(-1);
+    const word = prev && LAST_WORD_RE.exec(prev)?.[1];
+    const join = word && (/^\s*[\p{Ll}\p{N}]/u.test(piece) || (names.has(word) && !STARTER_RE.test(piece)));
+    if (join) out[out.length - 1] = prev + piece;
+    else out.push(piece);
+  }
+  return out;
+}
+
 // ---------- matching ----------
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -218,7 +259,10 @@ function compile(entry) {
     'after-number': '(?<=(?<![\\d.,])(?<num>\\d[\\d,]*(?:\\.\\d+)?)(?<sep>\\s*-?\\s*))',
     'after-name': "(?<=\\p{Lu}[\\p{L}'’-]*\\s+)",
   }[when] ?? '';
-  const after = { 'before-number': '(?=\\s+\\d)', 'before-name': '(?=\\s+\\p{Lu})' }[when] ?? '';
+  const after = {
+    'before-number': '(?=\\s+\\d)',
+    'before-name': `(?=\\s+(?!(?:${STARTERS.join('|')})(?![\\p{L}\\p{N}]))\\p{Lu})`,
+  }[when] ?? '';
   return { re: new RegExp(`${before}${start}${body}${end}${after}`, 'gu'), expansion, plural };
 }
 

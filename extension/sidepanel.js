@@ -1,7 +1,7 @@
 import { getSelectionText } from './selection.js';
 import {
   CONTEXTS, activeCount, activeRules, builtinChanges, cleanEntry, defaultFor, examplesFor, expandAbbreviations,
-  exportAbbreviations, importAbbreviations, isUsableAbbreviation, listAbbreviations, loadAbbreviations,
+  exportAbbreviations, importAbbreviations, isUsableAbbreviation, joinSentences, listAbbreviations, loadAbbreviations,
   putAbbreviation, removeAbbreviation, restoreBuiltins, restoreDefault, saveAbbreviations, setEnabled,
 } from './abbreviations.js';
 import {
@@ -79,7 +79,8 @@ function langOf(text) {
 function splitText(text) {
   const out = [];
   text.split(/\n+/).map((p) => p.trim()).filter(Boolean).forEach((paragraph, para) => {
-    for (const { segment } of segmenter.segment(paragraph)) {
+    const pieces = joinSentences([...segmenter.segment(paragraph)].map((x) => x.segment), abbreviations);
+    for (const segment of pieces) {
       for (const display of splitLong(segment)) {
         const text = display.trim();
         if (text) out.push({ text, display, para, lang: langOf(text) });
