@@ -1,10 +1,11 @@
 import { getSelectionText } from './selection.js';
+import { expandAbbreviations } from './abbreviations.js';
 import {
   applyPronunciations, loadPronunciations, savePronunciations, previewInput, isUsable, PHONEME_FORBIDDEN,
   exportPronunciations, importPronunciations,
 } from './pronunciations.js';
 
-const DEFAULTS = { server: 'http://localhost:8000/v1', voice: 'af_heart', speed: 1.5, follow: true };
+const DEFAULTS = { server: 'http://localhost:8000/v1', voice: 'af_heart', speed: 1.5, follow: true, expandAbbreviations: true };
 const FALLBACK_VOICES = [
   { voice: 'af_heart', lang: 'en-US' },
   { voice: 'jf_alpha', lang: 'ja-JP' },
@@ -23,7 +24,7 @@ const el = {
   play: $('play'), prev: $('prev'), next: $('next'), stop: $('stop'),
   status: $('status'), lang: $('lang'), seek: $('seek'), count: $('count'), error: $('error'), errorText: $('error-text'), errorSettings: $('error-settings'),
   empty: $('empty'), doc: $('doc'), paste: $('paste'),
-  voice: $('voice'), speed: $('speed'), speedValue: $('speed-value'), follow: $('follow'),
+  voice: $('voice'), speed: $('speed'), speedValue: $('speed-value'), follow: $('follow'), expandAbbr: $('expand-abbr'),
   settings: $('settings'), server: $('server'), serverResult: $('server-result'),
 };
 
@@ -129,7 +130,9 @@ function langsFor(voiceId) {
 }
 
 function fetchAudio(sentence, signal) {
-  const input = applyPronunciations(sentence.text, pronunciations, langsFor(settings.voice));
+  const langs = langsFor(settings.voice);
+  let input = applyPronunciations(sentence.text, pronunciations, langs);
+  if (settings.expandAbbreviations && langs.has('en')) input = expandAbbreviations(input);
   return synthesize(input, settings.voice, signal);
 }
 
@@ -401,6 +404,7 @@ async function loadSettings() {
   el.speedValue.textContent = `${Number(settings.speed).toFixed(1)}×`;
   el.follow.setAttribute('aria-pressed', settings.follow);
   el.server.value = settings.server;
+  el.expandAbbr.checked = settings.expandAbbreviations;
 }
 
 function saveSetting(key, value) {
@@ -492,6 +496,11 @@ el.voice.addEventListener('change', () => {
   invalidateAudio();
 });
 el.speed.addEventListener('input', () => changeSpeed(Number(el.speed.value)));
+el.expandAbbr.addEventListener('change', () => {
+  saveSetting('expandAbbreviations', el.expandAbbr.checked);
+  invalidateAudio();
+});
+
 el.follow.addEventListener('click', () => {
   saveSetting('follow', !settings.follow);
   el.follow.setAttribute('aria-pressed', settings.follow);

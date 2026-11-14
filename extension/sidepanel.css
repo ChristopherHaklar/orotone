@@ -290,6 +290,8 @@ details.group:not([open]) { gap: 0; }
 
 .check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .check input { accent-color: var(--accent); }
+.check.setting { margin-top: 12px; }
+.check.setting + .small { margin: 4px 0 0 24px; }
 
 .list { list-style: none; margin: 0; padding: 0; }
 #pron-list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
