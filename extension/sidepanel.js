@@ -1,7 +1,7 @@
 import { getSelectionText } from './selection.js';
 import {
   CONTEXTS, activeCount, activeRules, builtinChanges, cleanEntry, defaultFor, examplesFor, expandAbbreviations,
-  exportAbbreviations, importAbbreviations, isUsableAbbreviation, joinSentences, listAbbreviations, loadAbbreviations,
+  exportAbbreviations, importAbbreviations, isUsableAbbreviation, joinSentences, listAbbreviations, loadAbbreviations, ordinalDates,
   putAbbreviation, removeAbbreviation, restoreBuiltins, restoreDefault, saveAbbreviations, setEnabled,
 } from './abbreviations.js';
 import {
@@ -9,7 +9,7 @@ import {
   exportPronunciations, importPronunciations,
 } from './pronunciations.js';
 
-const DEFAULTS = { server: 'http://localhost:8000/v1', voice: 'af_heart', speed: 1.5, follow: true, usePronunciations: true, expandAbbreviations: true };
+const DEFAULTS = { server: 'http://localhost:8000/v1', voice: 'af_heart', speed: 1.5, follow: true, usePronunciations: true, expandAbbreviations: true, ordinalDates: true };
 const FALLBACK_VOICES = [
   { voice: 'af_heart', lang: 'en-US' },
   { voice: 'jf_alpha', lang: 'ja-JP' },
@@ -139,7 +139,10 @@ function langsFor(voiceId) {
 function fetchAudio(sentence, signal) {
   const langs = langsFor(settings.voice);
   let input = settings.usePronunciations ? applyPronunciations(sentence.text, pronunciations, langs) : sentence.text;
-  if (settings.expandAbbreviations && langs.has('en')) input = expandAbbreviations(input, abbrRules);
+  if (settings.expandAbbreviations && langs.has('en')) {
+    input = expandAbbreviations(input, abbrRules);
+    if (settings.ordinalDates) input = ordinalDates(input);
+  }
   return synthesize(input, settings.voice, signal);
 }
 
@@ -511,6 +514,7 @@ function syncSwitches() {
   $('abbr-row').classList.toggle('off', !settings.expandAbbreviations);
   $('abbr-builtin').classList.toggle('dimmed', !settings.expandAbbreviations);
   $('abbr-custom').classList.toggle('dimmed', !settings.expandAbbreviations);
+  $('dates-row').classList.toggle('dimmed', !settings.expandAbbreviations);
   $('pron-list').classList.toggle('dimmed', !settings.usePronunciations);
 }
 for (const input of document.querySelectorAll('input[data-setting]')) {

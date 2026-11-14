@@ -299,6 +299,34 @@ export function expandAbbreviations(text, rules) {
   return parts.join('');
 }
 
+// ---------- dates ----------
+
+// "October 24" is said "October twenty-fourth", but misaki reads "twenty-four". It does read "24th"
+// right, so add the suffix to a day (1-31) after a month name, also across ranges ("June 1-3").
+// Years ("October 2026"), times and decimals don't match, and neither do days already written "24th".
+const MONTH_NAMES = 'January|February|March|April|May|June|July|August|September|October|November|December';
+const DATE_RE = new RegExp(`\\b(${MONTH_NAMES})(\\s+)(\\d{1,2})(?:(\\s*[-–]\\s*)(\\d{1,2}))?(?![\\p{L}\\p{N}]|[.,:]\\d)`, 'gu');
+
+function ordinal(day) {
+  const n = Number(day);
+  if (n < 1 || n > 31) return null;
+  const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th' : { 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] ?? 'th';
+  return `${n}${suffix}`;
+}
+
+export function ordinalDates(text) {
+  const parts = text.split(OVERRIDE_RE);
+  for (let i = 0; i < parts.length; i += 2) {
+    parts[i] = parts[i].replace(DATE_RE, (match, month, space, day, dash, end) => {
+      const first = ordinal(day);
+      const last = end === undefined ? '' : ordinal(end);
+      if (!first || last === null) return match;
+      return `${month}${space}${first}${dash ?? ''}${last}`;
+    });
+  }
+  return parts.join('');
+}
+
 const SAMPLE = {
   'always': (a) => [a],
   'before-number': (a) => [`${a} 12`],
